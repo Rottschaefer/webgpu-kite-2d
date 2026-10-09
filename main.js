@@ -16,108 +16,77 @@ import {
 
 class Scene {
     constructor(gpu) {
-        this.angleX = 0;
-        this.angleY = 0;
-        this.angleZ = 0;
-        this.usePerspective = false;
 
+        // Contador de tempo para fazer a animação
+        this.time = 0;
+
+        //Aqui envia os shaders em WGSL pra GPU
         this.program = gpu.createProgram(vertShaderSrc, fragShaderSrc, {
-            cullMode: 'back',
+            cullMode: 'none',
         });
 
-        this.shape = gpu.createShape(this.createCube(), 36);
+        // Cria os 4 triângulos (12 vértices no total)
+        this.shape = gpu.createShape(this.createKiteScene(), 12);
+
+        // Reserva buffer na GPU
         this.uniform = gpu.createUniform(this.program, createIdentityMat4());
     }
 
-    createCube() {
-        const vertices = [
-            [0.0, 0.0, 0.0, 1.0],
-            [0.1, 0.0, 0.0, 1.0],
-            [0.1, 0.0, 0.1, 1.0],
-            [0.0, 0.0, 0.1, 1.0],
-            [0.0, 0.1, 0.0, 1.0],
-            [0.1, 0.1, 0.0, 1.0],
-            [0.1, 0.1, 0.1, 1.0],
-            [0.0, 0.1, 0.1, 1.0],
-        ];
+    createKiteScene() {
 
-        const faceColors = [
-            [1.0, 0.0, 0.0, 1.0],
-            [0.0, 1.0, 0.0, 1.0],
-            [0.0, 0.0, 1.0, 1.0],
-            [1.0, 0.7, 0.7, 1.0],
-            [0.7, 1.0, 0.7, 1.0],
-            [0.7, 0.7, 1.0, 1.0],
-        ];
-
+        // Criação dos triângulos que compõe a pipa e suas cores
         const positions = [
-            ...vertices[0], ...vertices[3], ...vertices[7],
-            ...vertices[0], ...vertices[7], ...vertices[4],
+            //Metade Esquerda Vermelha
+            0.0, 0.55, 0.0, 1.0,
+            -0.28, 0.25, 0.0, 1.0,
+            0.0, -0.20, 0.0, 1.0,
 
-            ...vertices[5], ...vertices[1], ...vertices[0],
-            ...vertices[5], ...vertices[0], ...vertices[4],
+            //Metade Direita Amarela
+            0.0, 0.55, 0.0, 1.0,
+            0.0, -0.20, 0.0, 1.0,
+            0.28, 0.25, 0.0, 1.0,
 
-            ...vertices[1], ...vertices[2], ...vertices[3],
-            ...vertices[1], ...vertices[3], ...vertices[0],
+            // Primeiro Lacinho Laranja
+            0.00, -0.22, 0.0, 1.0,
+            0.02, -0.42, 0.0, 1.0,
+            0.14, -0.34, 0.0, 1.0,
 
-            ...vertices[2], ...vertices[6], ...vertices[7],
-            ...vertices[2], ...vertices[7], ...vertices[3],
-
-            ...vertices[5], ...vertices[6], ...vertices[2],
-            ...vertices[5], ...vertices[2], ...vertices[1],
-
-            ...vertices[4], ...vertices[7], ...vertices[6],
-            ...vertices[4], ...vertices[6], ...vertices[5],
+            // Segunfo Lacinho Laranja
+            0.09, -0.43, 0.0, 1.0,
+            0.11, -0.62, 0.0, 1.0,
+            0.23, -0.53, 0.0, 1.0,
         ];
+
+        // Define as cores
+        const redKite = [0.89, 0.12, 0.12, 1.0];
+        const yellowKite = [0.99, 0.80, 0.08, 1.0];
+        const orangeTail = [0.98, 0.46, 0.08, 1.0];
 
         const colors = [
-            ...faceColors[0], ...faceColors[0], ...faceColors[0],
-            ...faceColors[0], ...faceColors[0], ...faceColors[0],
-
-            ...faceColors[2], ...faceColors[2], ...faceColors[2],
-            ...faceColors[2], ...faceColors[2], ...faceColors[2],
-
-            ...faceColors[1], ...faceColors[1], ...faceColors[1],
-            ...faceColors[1], ...faceColors[1], ...faceColors[1],
-
-            ...faceColors[5], ...faceColors[5], ...faceColors[5],
-            ...faceColors[5], ...faceColors[5], ...faceColors[5],
-
-            ...faceColors[3], ...faceColors[3], ...faceColors[3],
-            ...faceColors[3], ...faceColors[3], ...faceColors[3],
-
-            ...faceColors[4], ...faceColors[4], ...faceColors[4],
-            ...faceColors[4], ...faceColors[4], ...faceColors[4]
+            ...redKite, ...redKite, ...redKite,       // Triângulo 1 (Pipa Esquerda)
+            ...yellowKite, ...yellowKite, ...yellowKite,    // Triângulo 2 (Pipa Direita)
+            ...orangeTail, ...orangeTail, ...orangeTail,    // Triângulo 3 (Fita 1)
+            ...orangeTail, ...orangeTail, ...orangeTail,    // Triângulo 4 (Fita 2)
         ];
 
         return [positions, colors];
     }
 
     createModelMatrix() {
-        this.angleX += 0.01;
-        this.angleY += 0.0;
-        this.angleZ += 0.0;
+        // Avança o tempo do loop a cada frame
+        this.time += 0.03;
 
-        const center = createTranslationMat4(-0.05, -0.05, -0.05);
-        const rotateX = createRotationXMat4(this.angleX);
-        const rotateY = createRotationYMat4(this.angleY);
-        const rotateZ = createRotationZMat4(this.angleZ);
-        const scale = createScaleMat4(5, 5, 5);
-        const translate = createTranslationMat4(0, 0, 0.5);
+        // Movimento vertical contínuo (subir e descer) usando seno
+        const amplitude = 0.35;
+        const translateY = amplitude * Math.sin(this.time);
 
-        let model = createIdentityMat4();
-        model = multiplyMat4(center, model);
-        model = multiplyMat4(rotateX, model);
-        model = multiplyMat4(rotateY, model);
-        model = multiplyMat4(rotateZ, model);
-        model = multiplyMat4(scale, model);
-        return multiplyMat4(translate, model);
+        return createTranslationMat4(0, translateY, 0);
     }
 
     createViewMatrix() {
-        // A câmera ocupa o canto superior direito da frente do volume de visão.
-        const eye = [1, 1, -1];
-        const at = [0, 0, 0.5];
+        // Câmera 2D ortogonal posicionada em Z = 2, olhando para a origem (0, 0, 0)
+        const eye = [0, 0, 2];
+        const at = [0, 0, 0];
         const up = [0, 1, 0];
 
         return createLookAtMat4(eye, at, up, true);
@@ -125,22 +94,24 @@ class Scene {
 
     createProjectionMatrix() {
         const aspect = 1024 / 768;
-
-        if (this.usePerspective) {
-            return createPerspectiveMat4(Math.PI / 3, aspect, 0.1, 10);
-        }
-
-        return createOrthographicMat4(-1.5 * aspect, 1.5 * aspect, -1.5, 1.5, 0.1, 10);
+        return createOrthographicMat4(-1.6 * aspect, 1.6 * aspect, -1.6, 1.6, 0.1, 10);
     }
 
     draw(gpu) {
+
+        //Monta 1 frame
+
         const model = this.createModelMatrix();
         const view = this.createViewMatrix();
         const projection = this.createProjectionMatrix();
 
-        // O objeto passa por model, depois view e, por fim, projection.
+        // Multiplicação P * V * M
         const modelView = multiplyMat4(view, model);
-        this.uniform.data.set(multiplyMat4(projection, modelView));
+
+        //Essa matriz uniform que aglomera todas as transformações aplicadas nos vértices, ela que é enviada pra GPU
+        const uniformMatriz = multiplyMat4(projection, modelView);
+
+        this.uniform.data.set(uniformMatriz);
         gpu.writeBuffer(this.uniform.buffer, this.uniform.data);
         gpu.draw(this.program, this.shape, [this.uniform.bindGroup]);
     }
@@ -148,7 +119,12 @@ class Scene {
 
 class Main {
     async init() {
-        this.gpu = await WebGPU.createCanvas('#glcanvas', 1024, 768);
+
+        // Cria background em azul claro que é a cor do céu
+        this.gpu = await WebGPU.createCanvas('#glcanvas', 1024, 768, {
+            clearColor: { r: 0.58, g: 0.79, b: 0.98, a: 1.0 },
+            depth: false,
+        });
         this.scene = new Scene(this.gpu);
     }
 
@@ -156,6 +132,8 @@ class Main {
         this.gpu.start();
         this.scene.draw(this.gpu);
         this.gpu.finish();
+
+        //Assim que termina a exibição do frame atual, chamamos requestAnimationFrame() para calcular o pŕoximo e ir montando a animação
         requestAnimationFrame(this.draw.bind(this));
     }
 }
