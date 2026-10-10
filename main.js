@@ -26,10 +26,15 @@ class Scene {
         });
 
         // Cria os 4 triângulos (12 vértices no total)
-        this.shape = gpu.createShape(this.createKiteScene(), 12);
+        const [positions, colors] = this.createKiteScene();
+        this.shape = gpu.createShape([positions.slice(0, 24), colors.slice(0, 24)], 6);
+        this.firstTailShape = gpu.createShape([positions.slice(24, 36), colors.slice(24, 36)], 3);
+        this.secondTailShape = gpu.createShape([positions.slice(36, 48), colors.slice(36, 48)], 3);
 
-        // Reserva buffer na GPU
+        // Cada parte tem seu buffer para receber uma matriz diferente
         this.uniform = gpu.createUniform(this.program, createIdentityMat4());
+        this.firstTailUniform = gpu.createUniform(this.program, createIdentityMat4());
+        this.secondTailUniform = gpu.createUniform(this.program, createIdentityMat4());
     }
 
     createKiteScene() {
@@ -46,15 +51,15 @@ class Scene {
             0.0, -0.20, 0.0, 1.0,
             0.28, 0.25, 0.0, 1.0,
 
-            // Primeiro Lacinho Laranja
-            0.00, -0.22, 0.0, 1.0,
-            0.02, -0.42, 0.0, 1.0,
-            0.14, -0.34, 0.0, 1.0,
+            // Primeiro Lacinho Laranja, com o ponto de ligação na origem local
+            0.00, 0.00, 0.0, 1.0,
+            0.02, -0.20, 0.0, 1.0,
+            0.14, -0.12, 0.0, 1.0,
 
-            // Segunfo Lacinho Laranja
-            0.09, -0.43, 0.0, 1.0,
-            0.11, -0.62, 0.0, 1.0,
-            0.23, -0.53, 0.0, 1.0,
+            // Segundo Lacinho Laranja, também em coordenadas locais
+            0.00, 0.00, 0.0, 1.0,
+            0.02, -0.19, 0.0, 1.0,
+            0.14, -0.10, 0.0, 1.0,
         ];
 
         // Define as cores
@@ -80,7 +85,36 @@ class Scene {
         const amplitude = 0.35;
         const translateY = amplitude * Math.sin(this.time);
 
-        return createTranslationMat4(0, translateY, 0);
+        // Rotação leve em torno do centro vertical do corpo da pipa
+        const angle = 0.14 * Math.sin(this.time * 0.8);
+        const centerY = (0.55 - 0.20) / 2;
+        const translation = createTranslationMat4(0, translateY, 0);
+        const toCenter = createTranslationMat4(0, centerY, 0);
+        const rotation = createRotationZMat4(angle);
+        const fromCenter = createTranslationMat4(0, -centerY, 0);
+
+        const localRotation = multiplyMat4(toCenter, multiplyMat4(rotation, fromCenter));
+        return multiplyMat4(translation, localRotation);
+    }
+
+    createFirstTailModelMatrix(model) {
+        // A primeira fita herda o movimento da pipa e gira na ponta inferior
+        const angle = 0.20 * Math.sin(this.time * 1.6);
+        const translation = createTranslationMat4(0, -0.20, 0);
+        const rotation = createRotationZMat4(angle);
+
+        const localModel = multiplyMat4(translation, rotation);
+        return multiplyMat4(model, localModel);
+    }
+
+    createSecondTailModelMatrix(firstTailModel) {
+        // A segunda fita herda a primeira e oscila com uma diferença de fase
+        const angle = 0.28 * Math.sin(this.time * 1.6 - 0.5);
+        const translation = createTranslationMat4(0.02, -0.20, 0);
+        const rotation = createRotationZMat4(angle);
+
+        const localModel = multiplyMat4(translation, rotation);
+        return multiplyMat4(firstTailModel, localModel);
     }
 
     createViewMatrix() {
@@ -97,23 +131,30 @@ class Scene {
         return createOrthographicMat4(-1.6 * aspect, 1.6 * aspect, -1.6, 1.6, 0.1, 10);
     }
 
-    draw(gpu) {
-
-        //Monta 1 frame
-
-        const model = this.createModelMatrix();
-        const view = this.createViewMatrix();
-        const projection = this.createProjectionMatrix();
-
+    drawShape(gpu, shape, uniform, model, view, projection) {
         // Multiplicação P * V * M
         const modelView = multiplyMat4(view, model);
 
         //Essa matriz uniform que aglomera todas as transformações aplicadas nos vértices, ela que é enviada pra GPU
         const uniformMatriz = multiplyMat4(projection, modelView);
 
-        this.uniform.data.set(uniformMatriz);
-        gpu.writeBuffer(this.uniform.buffer, this.uniform.data);
-        gpu.draw(this.program, this.shape, [this.uniform.bindGroup]);
+        uniform.data.set(uniformMatriz);
+        gpu.writeBuffer(uniform.buffer, uniform.data);
+        gpu.draw(this.program, shape, [uniform.bindGroup]);
+    }
+
+    draw(gpu) {
+
+        //Monta 1 frame, usando o mesmo tempo para a pipa e as duas fitas
+        const model = this.createModelMatrix();
+        const firstTailModel = this.createFirstTailModelMatrix(model);
+        const secondTailModel = this.createSecondTailModelMatrix(firstTailModel);
+        const view = this.createViewMatrix();
+        const projection = this.createProjectionMatrix();
+
+        this.drawShape(gpu, this.shape, this.uniform, model, view, projection);
+        this.drawShape(gpu, this.firstTailShape, this.firstTailUniform, firstTailModel, view, projection);
+        this.drawShape(gpu, this.secondTailShape, this.secondTailUniform, secondTailModel, view, projection);
     }
 }
 
