@@ -1,0 +1,202 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[brazil]{babel}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb}
+\usepackage{geometry}
+\geometry{top=2cm, bottom=2cm, left=2.2cm, right=2.2cm}
+
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning}
+
+\usepackage{listings}
+\lstdefinelanguage{JavaScript}{
+  keywords={const, let, var, function, return, if, else, true, false, new, async, await},
+  keywordstyle=\color{blue}\bfseries,
+  ndkeywords={class, export, boolean, throw, implements, import, this},
+  ndkeywordstyle=\color{purple}\bfseries,
+  sensitive=true,
+  comment=[l]{//},
+  morecomment=[s]{/*}{*/},
+  commentstyle=\color{gray}\itshape,
+  stringstyle=\color{teal}
+}
+\lstset{
+    basicstyle=\ttfamily\footnotesize,
+    keywordstyle=\color{blue}\bfseries,
+    commentstyle=\color{gray}\itshape,
+    stringstyle=\color{teal},
+    backgroundcolor=\color{black!3},
+    frame=single,
+    rulecolor=\color{black!15},
+    breaklines=true,
+    breakatwhitespace=true,
+    tabsize=2,
+    showstringspaces=false
+}
+
+\usepackage{hyperref}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!75!black,
+    urlcolor=blue!75!black,
+    pdfauthor={Felipe Cabral Liporage, Eduardo Rottschaefer Oliveira, Allan Vignoli dos Santos},
+    pdftitle={Relatório Técnico: Cena 2D Animada de Pipa em WebGPU}
+}
+
+\title{
+    \vspace{-1.2cm}
+    \textbf{Universidade Federal Fluminense --- IC/UFF} \\
+    \large Computação Gráfica --- Prof. Marcos Lage \\[0.4cm]
+    \Large \textbf{Relatório Técnico: Implementação de Cena 2D de Pipa em WebGPU}
+}
+
+\author{
+    \textbf{Felipe Cabral Liporage} \quad
+    \textbf{Eduardo Rottschaefer Oliveira} \quad
+    \textbf{Allan Vignoli dos Santos}
+}
+
+% \date{\today}
+
+\begin{document}
+
+\maketitle
+\vspace{-0.3cm}
+\begin{center}
+    \small \textbf{Código-fonte:} \url{https://github.com/Rottschaefer/webgpu-kite-2d}
+\end{center}
+\vspace{-0.2cm}
+\hrule
+\vspace{0.3cm}
+
+\section{Introdução}
+
+O trabalho consiste em uma cena 2D feita em \textbf{WebGPU}, com shaders em \textbf{WGSL}, mostrando uma pipa voando sobre um céu azul de cor sólida. O código foi construído a partir dos exemplos feitos em sala, reaproveitando os arquivos:
+\begin{itemize}\setlength\itemsep{0em}
+    \item \textbf{\texttt{lib/webgpu.js}:} cuida da parte de configuração da WebGPU, como pegar o \textit{device}, configurar o canvas, criar o pipeline e os buffers.
+    \item \textbf{\texttt{lib/utils.js}:} funções para criar as matrizes $4 \times 4$ que usamos (translação, rotação, câmera e projeção ortográfica).
+    \item \textbf{Shaders:} o vertex shader (\texttt{projection.vert.js}) multiplica cada vértice pela matriz final recebida no \textit{uniform buffer}, e o fragment shader (\texttt{projection.frag.js}) só pinta com a cor do vértice.
+\end{itemize}
+A animação roda chamando \texttt{requestAnimationFrame} a cada quadro, que atualiza o tempo e desenha a cena de novo.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.45\textwidth]{screenshot_pipa.png}
+    \caption{Cena da pipa rodando no navegador.}
+    \label{fig:pipa}
+\end{figure}
+
+\section{Modelagem da Pipa}
+
+A cena usa apenas quatro triângulos, todos no plano $Z = 0$:
+\begin{itemize}
+    \item \textbf{Pipa:} dois triângulos, um vermelho e um amarelo, que dividem a aresta do meio.
+    \item \textbf{Cauda:} duas fitas laranjas, uma presa embaixo da outra. Cada fita foi desenhada com a ponta de cima em $(0,0)$.
+\end{itemize}
+
+Como a pipa e cada fita se movem de forma diferente, separamos os vértices em três \textit{vertex buffers}: um para a pipa (6 vértices) e um para cada fita (3 vértices cada). O céu é só a cor de fundo usada para limpar a tela (\texttt{clearColor}) antes de desenhar.
+
+\begin{table}[htbp]
+\centering
+\small
+\begin{tabular}{lccc}
+\toprule
+\textbf{Componente} & \textbf{Cor RGB} & \textbf{Vértices Locais $(x, y)$} & \textbf{Qtd.} \\
+\midrule
+Pipa (Metade Esquerda) & $(0.89, 0.12, 0.12)$ & $(0.0, 0.55), (-0.28, 0.25), (0.0, -0.20)$ & 3 \\
+Pipa (Metade Direita)  & $(0.99, 0.80, 0.08)$ & $(0.0, 0.55), (0.0, -0.20), (0.28, 0.25)$  & 3 \\
+Fita 1 (Superior)      & $(0.98, 0.46, 0.08)$ & $(0.00, 0.00), (0.02, -0.20), (0.14, -0.12)$ & 3 \\
+Fita 2 (Inferior)      & $(0.98, 0.46, 0.08)$ & $(0.00, 0.00), (0.02, -0.19), (0.14, -0.10)$ & 3 \\
+\bottomrule
+\end{tabular}
+\caption{Triângulos utilizados na modelagem da cena.}
+\label{tab:vertices}
+\end{table}
+
+\section{Transformações Geométricas e Animação}
+
+\subsection{Movimento Vertical da Pipa}
+Para a pipa subir e descer sem parar, usamos um seno do tempo como deslocamento em $Y$:
+\begin{equation}
+    y(t) = 0.35 \cdot \sin(t)
+\end{equation}
+A cada quadro o tempo $t$ aumenta $0.03$, então a pipa vai de $-0.35$ até $+0.35$ e volta, de forma suave. Esse valor vira uma translação $\mathbf{T}(0,\, y(t))$.
+
+\subsection{Rotação da Pipa}
+A rotação em $Z$ sempre gira o objeto em torno da origem. Como a origem fica perto da parte de baixo da pipa, girar direto faria ela balançar torto. Para girar em torno do meio da pipa, levamos o centro da pipa ($y = 0.175$) para a origem, giramos e depois devolvemos para o lugar:
+\begin{equation}
+    \mathbf{M}_{\text{rot}} = \mathbf{T}(0,\, 0.175) \cdot \mathbf{R}_z(\theta) \cdot \mathbf{T}(0,\, -0.175)
+\end{equation}
+O ângulo varia com o tempo por $\theta(t) = 0.14 \cdot \sin(0.8\, t)$, ou seja, a pipa inclina cerca de $8^\circ$ para cada lado. Por fim, a matriz da pipa junta a rotação com a subida e descida da seção anterior:
+\begin{equation}
+    \mathbf{M}_{\text{pipa}} = \mathbf{T}(0,\, y(t)) \cdot \mathbf{M}_{\text{rot}}
+\end{equation}
+
+\subsection{Movimento da Cauda}
+A ideia é que a cauda acompanhe a pipa, mas balance do seu próprio jeito. Para isso, cada fita usa a matriz da peça a que está presa e aplica por cima a sua própria rotação. Assim, quando a pipa se move, as fitas vão junto automaticamente:
+
+\begin{center}
+\begin{tikzpicture}[node distance=0.7cm, auto, >=Latex]
+    \node [draw, rectangle, rounded corners, fill=blue!8, text width=6.5cm, text centered] (pipa) 
+        {\small \textbf{Corpo da Pipa} $\ (\mathbf{M}_{\text{pipa}})$};
+    \node [draw, rectangle, rounded corners, fill=orange!12, text width=6.5cm, text centered, below=of pipa] (fita1) 
+        {\small \textbf{Fita 1} (presa na pipa)};
+    \node [draw, rectangle, rounded corners, fill=orange!22, text width=6.5cm, text centered, below=of fita1] (fita2) 
+        {\small \textbf{Fita 2} (presa na fita 1)};
+    
+    \draw [->, thick] (pipa) -- (fita1);
+    \draw [->, thick] (fita1) -- (fita2);
+\end{tikzpicture}
+\end{center}
+
+\begin{itemize}\setlength\itemsep{0em}
+    \item \textbf{Fita 1:} é levada até a ponta de baixo da pipa, em $(0, -0.20)$, e gira com $\theta_1(t) = 0.20 \cdot \sin(1.6\, t)$. Ela balança duas vezes mais rápido que a pipa, já que é mais leve.
+    \[
+        \mathbf{M}_{\text{fita1}} = \mathbf{M}_{\text{pipa}} \cdot \mathbf{T}(0,\, -0.20) \cdot \mathbf{R}_z(\theta_1)
+    \]
+    \item \textbf{Fita 2:} é levada até a ponta da fita 1, em $(0.02, -0.20)$, e gira com $\theta_2(t) = 0.28 \cdot \sin(1.6\, t - 0.5)$. O ângulo é um pouco maior e o movimento vem levemente atrasado em relação à fita 1, o que dá o efeito de ``chicote'' da cauda.
+    \[
+        \mathbf{M}_{\text{fita2}} = \mathbf{M}_{\text{fita1}} \cdot \mathbf{T}(0.02,\, -0.20) \cdot \mathbf{R}_z(\theta_2)
+    \]
+\end{itemize}
+
+\section{Câmera}
+A câmera é criada em \texttt{Scene.createViewMatrix()} usando a função \texttt{createLookAtMat4}. Para a câmera subir e descer, basta mudar o $Y$ da posição dela (\texttt{eye}) e do ponto para onde ela olha (\texttt{at}).
+
+O trabalho pede que a câmera acompanhe a pipa só parcialmente. Se ela seguisse a pipa por completo, a pipa ficaria parada no meio da tela e, como o fundo é de cor sólida, não daria para perceber que ela está se movendo. Por isso, a câmera anda só metade do que a pipa anda:
+\begin{equation}
+    y_{\text{cam}}(t) = 0.5 \cdot y(t)
+\end{equation}
+Assim, na tela a pipa ainda sobe e desce, só que com metade da amplitude. Os vetores usados foram:
+\begin{itemize}\setlength\itemsep{0em}
+    \item \texttt{eye} $= [0,\ y_{\text{cam}},\ 2]$: a câmera fica na frente da cena;
+    \item \texttt{at} $= [0,\ y_{\text{cam}},\ 0]$: olha reto para a pipa, na mesma altura;
+    \item \texttt{up} $= [0,\ 1,\ 0]$.
+\end{itemize}
+
+\section{Projeção Ortográfica}
+A projeção é criada em \texttt{Scene.createProjectionMatrix()}, com base no exemplo de aula \texttt{07 - projeções}:
+\begin{lstlisting}[language=JavaScript]
+const aspect = 1024 / 768;
+return createOrthographicMat4(-1.6 * aspect, 1.6 * aspect, -1.6, 1.6, 0.1, 10);
+\end{lstlisting}
+\begin{itemize}\setlength\itemsep{0em}
+    \item \textbf{Proporção da tela:} como o canvas é $1024 \times 768$ (mais largo que alto), os limites em $X$ são multiplicados pelo \texttt{aspect}. Sem isso a pipa apareceria esticada na horizontal.
+    \item \textbf{Tamanho da área visível:} o intervalo $[-1.6, 1.6]$ em $Y$ deixa uma folga para que a pipa e a cauda nunca saiam da tela, mesmo nos pontos mais alto e mais baixo do movimento.
+    \item \textbf{Near e far:} com \texttt{near} $= 0.1$ e \texttt{far} $= 10$, a pipa (que está a 2 unidades da câmera) fica dentro do volume visível.
+\end{itemize}
+
+\section{Composição Final e Renderização}
+A cada quadro, o método \texttt{Scene.drawShape()} monta a matriz final de cada parte (pipa, fita 1 e fita 2) e envia para a GPU:
+\begin{equation}
+    \mathbf{M}_{\text{final}} = \mathbf{P} \cdot \mathbf{V} \cdot \mathbf{M}
+\end{equation}
+onde $\mathbf{M}$ é a matriz de modelagem (posiciona e gira a peça), $\mathbf{V}$ é a matriz da câmera e $\mathbf{P}$ é a projeção ortográfica. Essa matriz é gravada no \textit{uniform buffer} com \texttt{writeBuffer}, e o vertex shader multiplica cada vértice por ela.
+
+
+\end{document}
