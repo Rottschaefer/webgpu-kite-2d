@@ -110,8 +110,9 @@ class Scene {
 
     createSecondTailModelMatrix(firstTailModel) {
         // A segunda fita herda a primeira e oscila com uma diferença de fase
+        // Conecta no meio da aresta inferior da primeira fita
         const angle = 0.28 * Math.sin(this.time * 1.6 - 0.5);
-        const translation = createTranslationMat4(0.02, -0.20, 0);
+        const translation = createTranslationMat4(0.08, -0.16, 0);
         const rotation = createRotationZMat4(angle);
 
         const localModel = multiplyMat4(translation, rotation);
