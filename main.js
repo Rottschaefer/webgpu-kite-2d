@@ -17,8 +17,9 @@ import {
 class Scene {
     constructor(gpu) {
 
-        // Contador de tempo para fazer a animação
+        // Contador de tempo e deslocamento vertical da pipa
         this.time = 0;
+        this.translateY = 0;
 
         //Aqui envia os shaders em WGSL pra GPU
         this.program = gpu.createProgram(vertShaderSrc, fragShaderSrc, {
@@ -83,12 +84,12 @@ class Scene {
 
         // Movimento vertical contínuo (subir e descer) usando seno
         const amplitude = 0.35;
-        const translateY = amplitude * Math.sin(this.time);
+        this.translateY = amplitude * Math.sin(this.time);
 
         // Rotação leve em torno do centro vertical do corpo da pipa
         const angle = 0.14 * Math.sin(this.time * 0.8);
         const centerY = (0.55 - 0.20) / 2;
-        const translation = createTranslationMat4(0, translateY, 0);
+        const translation = createTranslationMat4(0, this.translateY, 0);
         const toCenter = createTranslationMat4(0, centerY, 0);
         const rotation = createRotationZMat4(angle);
         const fromCenter = createTranslationMat4(0, -centerY, 0);
@@ -118,15 +119,23 @@ class Scene {
     }
 
     createViewMatrix() {
-        // Câmera 2D ortogonal posicionada em Z = 2, olhando para a origem (0, 0, 0)
-        const eye = [0, 0, 2];
-        const at = [0, 0, 0];
+        // Acompanhamento vertical parcial da pipa (fator de 50%):
+        // A câmera se desloca no mesmo sentido da pipa, mas com metade do "alcance",
+        // garantindo a percepção de movimento vertical na tela.
+        const trackingFactor = 0.5;
+        const cameraY = (this.translateY ?? 0) * trackingFactor;
+
+        // Desloca tanto a posição do observador (eye) quanto o alvo (at) no eixo Y
+        const eye = [0, cameraY, 2];
+        const at = [0, cameraY, 0];
         const up = [0, 1, 0];
 
         return createLookAtMat4(eye, at, up, true);
     }
 
     createProjectionMatrix() {
+        // Projeção ortográfica para o volume canônico do WebGPU.
+        // As dimensões horizontais são multiplicadas pelo aspect ratio para evitar distorção.
         const aspect = 1024 / 768;
         return createOrthographicMat4(-1.6 * aspect, 1.6 * aspect, -1.6, 1.6, 0.1, 10);
     }
